@@ -6,11 +6,13 @@
  * calendarIdPrivate - Google Calendar ID for the calendar you want to save your time entries in workspace 'Private'
  * calendarIdWork - Google Calendar ID for the calendar you want to save your time entries in workspace 'Work'
  * lastTimeEntryId - the last retrieved time entry ID recorded on script property; togglRecord() will retrieve time entries that are larger than this ID.
+ * currentYear - Current year.
  */
 
 /** 
  * Libary 'TogglScript' must be added to execute this script.
- * See https://github.com/ttsukagoshi/_Toggl_Scripts for details
+ * Script ID: 1gu8VZ-7Q1KdYpdIkUsijn_JiP6reGwUC2czBZtACzaJRyWxneM3MvXYY
+ * See https://github.com/ttsukagoshi/Toggl_Scripts for details
  */
 
 // Global variables
