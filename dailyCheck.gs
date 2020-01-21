@@ -71,8 +71,9 @@ function dailyCheck() {
       
       // Update script properties
       var updatedProperties = {
-        currentYear: year,
-        currentSpreadsheetId: createdSpreadsheetId
+        'currentYear' : year,
+        'currentSpreadsheetId' : createdSpreadsheetId,
+        'prevSpreadsheetId' : currentSpreadsheetId
       };
       sp.setProperties(updatedProperties, false);
       
