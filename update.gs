@@ -1,7 +1,7 @@
 /**
  * Update Toggl and Google Calendar records for time entries where the value in spreadsheet for field 'updateFlag' is 1.
  */
-function update() {
+function updateToggl() {
   var targetSpreadsheet = prevSpreadsheet; // Designate the spreadsheet object that you want to update
 
   // Stop currently running time entry
