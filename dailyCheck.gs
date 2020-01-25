@@ -10,7 +10,7 @@ function dailyCheck() {
   var logTimestamp = TogglScript.togglFormatDate(now);
   var logText = '';
   try {
-    if (year !== scriptProperties.currentYear) {
+    if (year !== scriptProperties.currentYear || currentSpreadsheetId == null) {
       var togglFolder = DriveApp.getFolderById(togglFolderId);
       var spreadsheetName = 'Toggl' + year + ' (' + userName + ')';
       
@@ -71,8 +71,9 @@ function dailyCheck() {
       
       // Update script properties
       var updatedProperties = {
-        currentYear: year,
-        currentSpreadsheetId: createdSpreadsheetId
+        'currentYear' : year,
+        'currentSpreadsheetId' : createdSpreadsheetId,
+        'prevSpreadsheetId' : currentSpreadsheetId
       };
       sp.setProperties(updatedProperties, false);
       
