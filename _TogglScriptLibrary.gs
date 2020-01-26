@@ -244,16 +244,26 @@ function stopTimeEntry(timeEntryId) {
  *
  * @param {Array} timeEntryIds Array of time entry IDs to update tags
  * @param {Array} tags Array of tags in string
- * @param {string} tagAction [Optional] string of either 'add' or 'remove'. When this is left blank, update will override all existing tags on the time entries.
+ * @param {string} tagAction [Optional] String of either 'add' or 'remove'. When this is left blank, update will override all existing tags on the time entries.
  * @return {Object} updatedTimeEntries The updated time entries
  */
 function bulkUpdateTags(timeEntryIds, tags, tagAction) {
+  tagAction = tagAction || null;
   var path = '/time_entries/' + timeEntryIds.join();
-  var payload = {
-    'time_entry' : {
-      'tags' : tags,
-      'tag_action' : tagAction
-    }
+  var payload = {};
+  if (tagAction == null) {
+    payload = {
+      'time_entry' : {
+        'tags' : tags
+      }
+    };
+  } else {
+    payload = {
+      'time_entry' : {
+        'tags' : tags,
+        'tag_action' : tagAction
+      }
+    };
   }
   var payloadString = JSON.stringify(payload);
   var updatedTimeEntries = JSON.parse(put(path, payloadString));
