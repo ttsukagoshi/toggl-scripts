@@ -239,6 +239,38 @@ function stopTimeEntry(timeEntryId) {
 }
 
 /**
+ * PUT request to bulk update time entries tags
+ * https://github.com/toggl/toggl_api_docs/blob/master/chapters/time_entries.md#bulk-update-time-entries-tags
+ *
+ * @param {Array} timeEntryIds Array of time entry IDs to update tags
+ * @param {Array} tags Array of tags in string
+ * @param {string} tagAction [Optional] String of either 'add' or 'remove'. When this is left blank, update will override all existing tags on the time entries.
+ * @return {Object} updatedTimeEntries The updated time entries
+ */
+function bulkUpdateTags(timeEntryIds, tags, tagAction) {
+  tagAction = tagAction || null;
+  var path = '/time_entries/' + timeEntryIds.join();
+  var payload = {};
+  if (tagAction == null) {
+    payload = {
+      'time_entry' : {
+        'tags' : tags
+      }
+    };
+  } else {
+    payload = {
+      'time_entry' : {
+        'tags' : tags,
+        'tag_action' : tagAction
+      }
+    };
+  }
+  var payloadString = JSON.stringify(payload);
+  var updatedTimeEntries = JSON.parse(put(path, payloadString));
+  return updatedTimeEntries;
+}
+
+/**
  * Stop the running time entry
  *
  * @return {Object} stoppedTimeEntry The stopped time entry

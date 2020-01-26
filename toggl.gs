@@ -1,12 +1,14 @@
 /** List of script properties to set before executing script:
  * togglFolderId - ID of Google Drive folder to save Toggl spreadsheet in. 
  * currentSpreadsheetId - Current spreadsheet ID to record Toggl time entries in.
- * prevSpreadsheetId - Spreadsheet ID of the spreadsheet used before currenSpreadsheetId.
+ * prevSpreadsheetId - [Optional] Spreadsheet ID of the spreadsheet used before currentSpreadsheetId.
  * togglToken - Toggl API Token. See https://github.com/toggl/toggl_api_docs#api-token for details.
  * calendarIdPrivate - Google Calendar ID for the calendar you want to save your time entries in workspace 'Private'
  * calendarIdWork - Google Calendar ID for the calendar you want to save your time entries in workspace 'Work'
  * lastTimeEntryId - the last retrieved time entry ID recorded on script property; togglRecord() will retrieve time entries that are larger than this ID.
  * currentYear - Current year.
+ * autoTagWorkspaceId - [Optional] Target workspace ID of function autoTag()
+ * autoTag01, autoTag02, ..., autoTag[n] - [Optional] Tags to use in function autoTag()
  */
 
 /** 
@@ -65,6 +67,9 @@ function togglRecord() {
   // Array for new time entries
   var newEntries = [];
   var entryNum = 0; // resetting index for new time entries
+  
+  // Execute autoTag() to set particular tag(s) to all time entries in a workspace
+  autoTag();
 
   try {  
     for (var i = 0; i < timeEntries.length; i++) {
@@ -85,7 +90,7 @@ function togglRecord() {
       var duronly = timeEntry.duronly;
       var lastModified = timeEntry.at;
       
-      // Ingnore time entries that 1) have already been recorded on spreadsheet or 2) is currently running
+      // Ignore time entries that 1) have already been recorded on spreadsheet or 2) is currently running
       if (timeEntryId <= lastTimeEntryId || duration < 0) {
         continue;
       }
@@ -248,4 +253,73 @@ function getMax(sheet, numCol, initialValue) {
   var data = sheet.getRange(2, numCol, sheet.getLastRow()-1).getValues();
   var max = data.reduce(function(accu, cur){return Math.max(accu, cur)}, initialValue);
   return max;
+}
+
+/**
+ * Set particular tag(s) to all time entries in a workspace
+ * e.g., set tag of the name of your office to all time entries in workspace 'Work'
+ */
+function autoTag() {
+  var now = new Date();
+  // Target workspace ID; if not specified in script property, all time entries will be subject to update.
+  var targetWorkspaceId = scriptProperties.autoTagWorkspaceId || null;
+  // Tags to add
+  var tag01 = scriptProperties.autoTag01 || null;
+  var tag02 = scriptProperties.autoTag02 || null;
+  // var tag03 = scriptProperties.autoTag03, ..., tag** = scriptProperties.autoTag**;
+  var tags = [tag01, tag02];
+
+  var lastTimeEntryId = scriptProperties.lastTimeEntryId; // the last retrieved time entry ID recorded on script property
+  var timeEntryIds = []; // Array of time entry IDs to update
+  
+  // Log
+  var logSheet = currentSpreadsheet.getSheetByName('Log');
+  var logText = '';
+  var log = [];
+  var logTimestamp = TogglScript.togglFormatDate(now);
+  
+  try {
+    // Throw exception if no tag is set.
+    if (tag01 == null) {
+      throw new Error('No tag set for autoTag().');
+    }
+    
+    // Get latest time entries
+    var timeEntries = TogglScript.getTimeEntries();
+    
+    // Determine the time entries to update, i.e., time entries in designated workspace that are not recorded on the spreadsheet yet
+    for (var i = 0; i < timeEntries.length; i++) {
+      var timeEntry = timeEntries[i];
+      var timeEntryId = timeEntry.id;
+      var workspaceId = timeEntry.wid;
+      var duration = timeEntry.duration; // time entry duration in seconds. Contains a negative value if the time entry is currently running.
+      
+      // Ignore time entries that 1) have already been recorded on spreadsheet, 2) is currently running, or 3) are not in the designated workspace
+      if (timeEntryId <= lastTimeEntryId || duration < 0) {
+        continue;
+      } else if (targetWorkspaceId !== null && workspaceId !== targetWorkspaceId) {
+        continue;
+      } else {
+        timeEntryIds.push(timeEntryId);
+      }
+    }
+    
+    // Throw exception if no time entry is subject to autoTag()
+    if (timeEntryIds.length == 0) {
+      throw new Error('No time entry subject to autoTag()');
+    }
+    
+    // Bulk update time entries tags
+    var updatedTimeEntries = TogglScript.bulkUpdateTags(timeEntryIds, tags, 'add'); 
+  
+    // Log results
+    logText = 'Updated: ' + timeEntryIds.length + ' time entry(ies) tagged by autoTag().\n' + JSON.stringify(updatedTimeEntries);
+    log = [logTimestamp, userName, logText];
+    logSheet.appendRow(log);
+    
+  } catch(e) {
+    logText = 'Error: autoTag():\n' + TogglScript.errorMessage(e);
+    log = [logTimestamp, userName, logText];
+    logSheet.appendRow(log);
+  }
 }
