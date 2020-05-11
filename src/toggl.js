@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-
 /** List of script properties to set before executing script:
  * togglFolderId - ID of Google Drive folder to save Toggl spreadsheet in. 
  * currentSpreadsheetId - Current spreadsheet ID to record Toggl time entries in.

@@ -1,3 +1,6 @@
+# Files for clasp
+appsscript.json
+.clasp.json
+
 # File for test runs on Google Apps Script editor
 src/test.js
-
