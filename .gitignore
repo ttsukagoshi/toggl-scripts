@@ -1,2 +1,5 @@
 # Files for clasp
 .clasp.json
+
+# test files
+src/_debug.js
