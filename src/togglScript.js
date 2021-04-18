@@ -135,11 +135,9 @@ class TogglScript {
    */
   getTimeEntries(startDateString = undefined, endDateString = undefined) {
     let extUrl = '';
-    if (!startDateString && !endDateString) {
-      extUrl = extUrl;
-    } else if (!startDateString || !endDateString) {
+    if (!startDateString || !endDateString) {
       throw new Error('endDateString is missing');
-    } else {
+    } else if (startDateString && endDateString) {
       extUrl = `?start_date=${encodeURIComponent(startDateString)}&end_date=${encodeURIComponent(endDateString)}`;
     }
     let path = '/time_entries' + extUrl;
