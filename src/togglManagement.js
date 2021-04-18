@@ -20,6 +20,104 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+/* global checkApiToken, deleteApiToken, onOpen, saveApiToken */
+
+const UP_KEY_API_TOKEN = 'togglToken';
+
+/**
+ * Spreadsheet menu
+ */
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('Toggl')
+    .addSeparator()
+    .addSubMenu(
+      ui.createMenu('Setup')
+        .addItem('Check Saved Token', 'checkApiToken')
+        .addItem('Save API Token', 'saveApiToken')
+        .addSeparator()
+        .addItem('Delete Token', 'deleteApiToken')
+    )
+  .addToUi();
+}
+
+/**
+ * Check the user property for existing Toggl API token and return the value as an alert message on the spreadsheet.
+ */
+function checkApiToken() {
+  var existingToken = PropertiesService.getUserProperties().getProperty(UP_KEY_API_TOKEN);
+  var message = '';
+  if (!existingToken) {
+    message = 'No Toggl API Token saved. Save a new one from the spreadsheet menu "Toggl" > "Setup" > "Save API Token"';
+  } else {
+    message = `Toggl API Token: ${existingToken}\nTake care in handling this value; this is basically a set of ID and password.`;
+  }
+  console.info('[checkApiToken] Completed.');
+  SpreadsheetApp.getUi().alert(message);
+}
+
+/**
+ * Save Toggle API Token in the user property.
+ */
+function saveApiToken() {
+  var ui = SpreadsheetApp.getUi();
+  var up = PropertiesService.getUserProperties();
+  var existingToken = up.getProperty(UP_KEY_API_TOKEN);
+  var canceledMessage = '[saveApiToken] Canceled.';
+  try {
+    if (existingToken) {
+      // If token already exists in the user property, ask the user whether or not to proceed.
+      let alertMessage = 'You already have a Toggl API Token saved in the user property of this script. Do you want to overwrite the token? You can check the existing token from the spreadsheet menu "Toggl" > "Setup" > "Check Saved Token"';
+      let alertResponse = ui.alert(alertMessage, ui.ButtonSet.YES_NO);
+      if (alertResponse !== ui.Button.YES) {
+        throw new Error(canceledMessage);
+      }
+    }
+    // Enter & save token on user property
+    let tokenResponse = ui.prompt('Enter Toggl API Token to save in the user property of this script. See https://github.com/toggl/toggl_api_docs#api-token for information on where to find your token.', ui.ButtonSet.OK_CANCEL);
+    if (tokenResponse.getSelectedButton() !== ui.Button.OK) {
+      throw new Error(canceledMessage);
+    }
+    up.setProperty(UP_KEY_API_TOKEN, tokenResponse.getResponseText());
+    let completeMessage = `[saveApiToken] Process completed: Your Toggl API Token has been saved in the user property of this script. No other accounts, including other accounts sharing this spreadsheet with you, will have access to this token.`;
+    // Log & notify user
+    console.info(completeMessage);
+    ui.alert(completeMessage);
+  } catch (error) {
+    if (error.message !== canceledMessage) {
+      console.error(error.stack);
+    }
+    ui.alert(error.stack);
+  }
+}
+
+/**
+ * Delete Toggl API Token saved in the user property.
+ */
+function deleteApiToken() {
+  var ui = SpreadsheetApp.getUi();
+  var canceledMessage = '[deleteApiToken] Canceled.';
+  try {
+    // Confirmation before proceeding
+    let confirmationResponse = ui.alert('Deleting Toggl API Token from user property. Are you sure you want to continue?', ui.ButtonSet.YES_NO);
+    if (confirmationResponse !== ui.Button.YES) {
+      throw new Error(canceledMessage);
+    }
+    // Delete user property
+    PropertiesService.getUserProperties().deleteProperty(UP_KEY_API_TOKEN);
+    let completeMessage = `[deleteApiToken] Process completed: User property "${UP_KEY_API_TOKEN}" has been deleted.`;
+    // Log & notify user
+    console.info(completeMessage);
+    ui.alert(completeMessage);
+  } catch (error) {
+    if (error.message !== canceledMessage) {
+      // Log as error only if the error message does not match the canceled message
+      console.error(error.stack);
+    }
+    ui.alert(error.stack);
+  }
+}
+
 /** List of script properties to set before executing script:
  * togglFolderId - ID of Google Drive folder to save Toggl spreadsheet in. 
  * currentSpreadsheetId - Current spreadsheet ID to record Toggl time entries in.
@@ -37,7 +135,7 @@
  * Libary 'TogglScript' must be added to execute this script.
  * Script ID: 1gu8VZ-7Q1KdYpdIkUsijn_JiP6reGwUC2czBZtACzaJRyWxneM3MvXYY
  * See https://github.com/ttsukagoshi/Toggl_Scripts for details
- */
+
 
 // Global variables
 var sp = PropertiesService.getScriptProperties(); // File > Properties > Script Properties
@@ -54,7 +152,7 @@ var timeZone = currentSpreadsheet.getSpreadsheetTimeZone();
 
 // Declare TogglScript Properties
 // Toggl API Token. See https://github.com/toggl/toggl_api_docs#api-token for details.
-TogglScript.togglToken = scriptProperties.togglToken; 
+TogglScript.togglToken = scriptProperties.togglToken;
 // Sync time zone of TogglScript Library to the zone of current spreadsheet
 TogglScript.timeZone = timeZone;
 
@@ -66,6 +164,7 @@ var calendarIds = {};
 //       calendarIds['myWorkspaceName2'] = scriptProperties.calendarId****;
 calendarIds['Private'] = scriptProperties.calendarIdPrivate;
 calendarIds['Work'] = scriptProperties.calendarIdWork;
+ */
 
 /**
  * Retrieve Toggl time entries, record on Google Spreadsheet, and transcribe to Google Calendar.
@@ -84,12 +183,12 @@ function togglRecord() {
   var log = [];
   var logText = '';
   var lastTimeEntryId = scriptProperties.lastTimeEntryId; // the last retrieved time entry ID recorded on script property
-  
+
   // Create an index object for workspace and project; see details of wpIndex() below
   var index = wpIndex();
   var workspaceIndex = index.workspaces;
   var projectIndex = index.projects;
-  
+
   // Get time entries
   var timeEntries = TogglScript.getTimeEntries();
 
@@ -97,10 +196,10 @@ function togglRecord() {
   var newEntries = [];
   var entryNum = 0; // resetting index for new time entries
 
-  try {  
+  try {
     for (var i = 0; i < timeEntries.length; i++) {
       var timeEntry = timeEntries[i];
-      
+
       // Properties of a time entry; see https://github.com/toggl/toggl_api_docs/blob/master/chapters/time_entries.md for details
       var timeEntryId = timeEntry.id;
       var workspaceId = timeEntry.wid;
@@ -115,12 +214,12 @@ function togglRecord() {
       var billable = timeEntry.billable;
       var duronly = timeEntry.duronly;
       var lastModified = timeEntry.at;
-      
+
       // Ignore time entries that 1) have already been recorded on spreadsheet or 2) is currently running
       if (timeEntryId <= lastTimeEntryId || duration < 0) {
         continue;
       }
-      
+
       // Get names for items in IDs
       var workspaceName = workspaceIndex[workspaceId];
       var projectName = 'NA';
@@ -129,28 +228,28 @@ function togglRecord() {
       } else {
         projectName = projectIndex[projectId];
       }
-      
+
       // Convert array of tags into a comma-segmented string
       var tag = '';
-      if (tags == null){
+      if (tags == null) {
         tag = tag;
       } else {
         tag = tags.join();
       }
-      
+
       // Convert date & times into time zone of the current spreadsheet
       var startLocal = TogglScript.togglFormatDate(new Date(start));
       var stopLocal = TogglScript.togglFormatDate(new Date(stop));
       var lastModifiedLocal = TogglScript.togglFormatDate(new Date(lastModified));
-      
+
       // Record on Google Calendar
       var targetCalendar = calendarIds[workspaceName]; // Target Google Calendar ID
       var calendarTitle = gcalTitle(projectName, desc); // Calendar event title; see below for gcalTitle()
       var calendarDesc = gcalDesc(timeEntryId, workspaceName, tags); // Calendar description; see below for gcalDesc()
-      
-      var event = CalendarApp.getCalendarById(targetCalendar).createEvent(calendarTitle, new Date(startLocal), new Date(stopLocal), {description: calendarDesc});
+
+      var event = CalendarApp.getCalendarById(targetCalendar).createEvent(calendarTitle, new Date(startLocal), new Date(stopLocal), { description: calendarDesc });
       var iCalId = event.getId();
-      
+
       // Store into array newEntry to record into spreadsheet.
       var timestampLocal = logTime;
       var newEntry = [
@@ -174,17 +273,17 @@ function togglRecord() {
         targetCalendar,
         '']; // an empty field at the last for 'updateFlag'
       newEntries[entryNum] = newEntry;
-      entryNum += 1;  
+      entryNum += 1;
     }
-    
+
     // Throw error if no new time entry is available
     if (newEntries.length < 1) {
       throw new Error('No new time entry available');
     }
-    
+
     // Record in current spreadsheet
-    var recordRange = recordSheet.getRange(recordSheet.getLastRow()+1, 1, newEntries.length, recordSheet.getLastColumn()).setValues(newEntries);
-    
+    var recordRange = recordSheet.getRange(recordSheet.getLastRow() + 1, 1, newEntries.length, recordSheet.getLastColumn()).setValues(newEntries);
+
     // Update lastTimeEntryId in script properties
     var uLastTimeEntryId = getMax(recordSheet, 1, lastTimeEntryId); // See below for details of getMax()
     sp.setProperty('lastTimeEntryId', uLastTimeEntryId);
@@ -223,29 +322,29 @@ function autoTag() {
 
   var lastTimeEntryId = scriptProperties.lastTimeEntryId; // the last retrieved time entry ID recorded on script property
   var timeEntryIds = []; // Array of time entry IDs to update
-  
+
   // Log
   var logSheet = currentSpreadsheet.getSheetByName('Log');
   var logText = '';
   var log = [];
   var logTimestamp = TogglScript.togglFormatDate(now);
-  
+
   try {
     // Throw exception if no tag is set.
     if (tag01 == null) {
       throw new Error('No tag set for autoTag().');
     }
-    
+
     // Get latest time entries
     var timeEntries = TogglScript.getTimeEntries();
-    
+
     // Determine the time entries to update, i.e., time entries in designated workspace that are not recorded on the spreadsheet yet
     for (var i = 0; i < timeEntries.length; i++) {
       var timeEntry = timeEntries[i];
       var timeEntryId = timeEntry.id;
       var workspaceId = timeEntry.wid;
       var duration = timeEntry.duration; // time entry duration in seconds. Contains a negative value if the time entry is currently running.
-      
+
       // Ignore time entries that 1) have already been recorded on spreadsheet, 2) is currently running, or 3) are not in the designated workspace
       if (timeEntryId <= lastTimeEntryId || duration < 0) {
         continue;
@@ -255,21 +354,21 @@ function autoTag() {
         timeEntryIds.push(timeEntryId);
       }
     }
-    
+
     // Throw exception if no time entry is subject to autoTag()
     if (timeEntryIds.length == 0) {
       throw new Error('No time entry subject to autoTag()');
     }
-    
+
     // Bulk update time entries tags
-    var updatedTimeEntries = TogglScript.bulkUpdateTags(timeEntryIds, tags, 'add'); 
-  
+    var updatedTimeEntries = TogglScript.bulkUpdateTags(timeEntryIds, tags, 'add');
+
     // Log results
     logText = 'Updated: ' + timeEntryIds.length + ' time entry(ies) tagged by autoTag().\n' + JSON.stringify(updatedTimeEntries);
     log = [logTimestamp, userName, logText];
     logSheet.appendRow(log);
-    
-  } catch(e) {
+
+  } catch (e) {
     logText = 'Error: autoTag():\n' + TogglScript.errorMessage(e);
     log = [logTimestamp, userName, logText];
     logSheet.appendRow(log);
@@ -345,8 +444,8 @@ function gcalDesc(timeEntryId, workspaceName, tagsString) {
 */
 function getMax(sheet, numCol, initialValue) {
   initialValue = initialValue || 0;
-  var data = sheet.getRange(2, numCol, sheet.getLastRow()-1).getValues();
-  var max = data.reduce(function(accu, cur){return Math.max(accu, cur)}, initialValue);
+  var data = sheet.getRange(2, numCol, sheet.getLastRow() - 1).getValues();
+  var max = data.reduce(function (accu, cur) { return Math.max(accu, cur) }, initialValue);
   return max;
 }
 
