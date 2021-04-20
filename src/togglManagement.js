@@ -158,7 +158,7 @@ function togglRecord() {
   var recordSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].RECORD_SHEET_NAME);
   var lastTimeEntryId = (upLastTimeEntryId ? upLastTimeEntryId : getMax_(recordSheet, 1, 1));
   // Variables for logs
-  var logTime = togglScript.togglFormatDate(now);
+  var logTime = togglScript.togglFormatDate(now, timeZone);
   var logSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME);
   try {
     // Create objects for workspaces and projects with their IDs and names as keys and values, respectively.
@@ -189,8 +189,8 @@ function togglRecord() {
         let stopLocal = togglScript.togglFormatDate(new Date(timeEntry.stop), timeZone);
         // Record on Google Calendar
         let targetCalendarId = config[SHEET_NAME_CALENDAR_IDS][workspaceName].CALENDAR_ID; // Target Google Calendar ID
-        let calendarTitle = gcalTitle(projectName, timeEntry.description); // Calendar event title; see below for gcalTitle()
-        let calendarDesc = gcalDesc(timeEntry.id, workspaceName, tagStr); // Calendar description; see below for gcalDesc()
+        let calendarTitle = gcalTitle_(projectName, timeEntry.description); // Calendar event title; see below for gcalTitle_()
+        let calendarDesc = gcalDesc_(timeEntry.id, workspaceName, tagStr); // Calendar description; see below for gcalDesc_()
         // let event = CalendarApp.getCalendarById(targetCalendarId).createEvent(calendarTitle, new Date(startLocal), new Date(stopLocal), { description: calendarDesc });
         let iCalId = CalendarApp.getCalendarById(targetCalendarId)
           .createEvent(calendarTitle, new Date(startLocal), new Date(stopLocal), { description: calendarDesc })
@@ -243,105 +243,77 @@ function togglRecord() {
 }
 
 /**
- * Set particular tag(s) to all time entries in a workspace
- * e.g., set tag of the name of your office to all time entries in workspace 'Work'
+ * Set a preset list of tag(s) to all retrieved time entries in the corresponding workspaces.
  */
 function autoTag() {
-  var now = new Date();
-  // Target workspace ID; if not specified in script property, all time entries will be subject to update.
-  var targetWorkspaceId = scriptProperties.autoTagWorkspaceId || null;
-  // Tags to add
-  var tag01 = scriptProperties.autoTag01 || null;
-  var tag02 = scriptProperties.autoTag02 || null;
-  // var tag03 = scriptProperties.autoTag03, ..., tag** = scriptProperties.autoTag**;
-  var tags = [tag01, tag02];
-
-  var lastTimeEntryId = scriptProperties.lastTimeEntryId; // the last retrieved time entry ID recorded on script property
-  var timeEntryIds = []; // Array of time entry IDs to update
-
-  // Log
-  var logSheet = targetSpreadsheet.getSheetByName('Log');
-  var logText = '';
-  var log = [];
-  var logTimestamp = togglScript.togglFormatDate(now);
-
+  // Basic variables
+  var myEmail = Session.getActiveUser().getEmail();
+  var userName = myEmail.substring(0, myEmail.indexOf('@')); // the *** in ***@myDomain.com
+  var togglScript = new TogglScript(PropertiesService.getUserProperties().getProperty(UP_KEY_API_TOKEN));
+  // Get configuration values from the spreadsheet
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var timeZone = ss.getSpreadsheetTimeZone();
+  var config = getSheetsInfo_(ss);
+  var autoTagsObj = config[SHEET_NAME_AUTO_TAG];
+  // Get the target spreadsheet and log sheet objects
+  var targetSpreadsheetUrl = config[SHEET_NAME_SPREADSHEET_LIST].reduce((latestRow, row) => {
+    if (!Object.keys(latestRow).length || row.YEAR >= latestRow.YEAR) {
+      latestRow = row;
+    }
+    return latestRow;
+  }, {}).URL;
+  var logSheet = SpreadsheetApp.openByUrl(targetSpreadsheetUrl).getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME);
   try {
-    // Throw exception if no tag is set.
-    if (tag01 == null) {
-      throw new Error('No tag set for autoTag().');
-    }
-
     // Get latest time entries
-    var timeEntries = togglScript.getTimeEntries();
-
-    // Determine the time entries to update, i.e., time entries in designated workspace that are not recorded on the spreadsheet yet
-    for (var i = 0; i < timeEntries.length; i++) {
-      var timeEntry = timeEntries[i];
-      var timeEntryId = timeEntry.id;
-      var workspaceId = timeEntry.wid;
-      var duration = timeEntry.duration; // time entry duration in seconds. Contains a negative value if the time entry is currently running.
-
-      // Ignore time entries that 1) have already been recorded on spreadsheet, 2) is currently running, or 3) are not in the designated workspace
-      if (timeEntryId <= lastTimeEntryId || duration < 0) {
-        continue;
-      } else if (targetWorkspaceId !== null && workspaceId !== targetWorkspaceId) {
-        continue;
-      } else {
-        timeEntryIds.push(timeEntryId);
+    let targetTimeEntriesObj = togglScript.getTimeEntries().reduce((obj, timeEntry) => {
+      if (timeEntry.duration >= 0 && autoTagsObj[timeEntry.wid]) {
+        if (!obj[timeEntry.wid]) {
+          obj[timeEntry.wid] = { 'timeEntryIds': [], 'tags': autoTagsObj[timeEntry.wid] };
+        }
+        obj[timeEntry.wid].timeEntryIds.push(timeEntry.id);
       }
-    }
-
-    // Throw exception if no time entry is subject to autoTag()
-    if (timeEntryIds.length == 0) {
-      throw new Error('No time entry subject to autoTag()');
-    }
-
+      return obj;
+    }, []);
     // Bulk update time entries tags
-    var updatedTimeEntries = togglScript.bulkUpdateTags(timeEntryIds, tags, 'add');
-
+    let updatedTimeEntries = Object.keys(targetTimeEntriesObj).map(wid => togglScript.bulkUpdateTags(targetTimeEntriesObj[wid].timeEntryIds, targetTimeEntriesObj[wid].tags, 'add'));
     // Log results
-    logText = 'Updated: ' + timeEntryIds.length + ' time entry(ies) tagged by autoTag().\n' + JSON.stringify(updatedTimeEntries);
-    log = [logTimestamp, userName, logText];
-    logSheet.appendRow(log);
-
-  } catch (e) {
-    logText = 'Error: autoTag():\n' + togglScript.errorMessage(e);
-    log = [logTimestamp, userName, logText];
-    logSheet.appendRow(log);
+    logSheet.appendRow([
+      togglScript.togglFormatDate(new Date(), timeZone),
+      userName,
+      `Updated: Time entry(ies) tagged by autoTag().\n${JSON.stringify(updatedTimeEntries)}`
+    ]);
+  } catch (error) {
+    logSheet.appendRow([
+      togglScript.togglFormatDate(new Date(), timeZone),
+      userName,
+      `Error: [autoTag] ${error.stack}`
+    ]);
   }
 }
 
-//***********************
-// Background Function(s)
-//***********************
-
 /**
- * Standardized Google Calendar title format for this script
- *
+ * Standardized Google Calendar title format for this script.
  * @param {string} togglProjectName Toggl project name
  * @param {string} togglDesc Toggl description
- * @return {string} calendarTitle Google Calendar title 
+ * @return {string}
  */
-function gcalTitle(togglProjectName, togglDesc) {
-  var calendarTitle = '[' + togglProjectName + '] ' + togglDesc;
-  return calendarTitle;
+function gcalTitle_(togglProjectName, togglDesc) {
+  return `[${togglProjectName}] ${togglDesc}`;
 }
 
 /**
- * Standardized Google Calendar description format for this script
- * 
+ * Standardized Google Calendar description format for this script.
  * @param {number} timeEntryId Toggl time entry ID
  * @param {string} workspaceName Toggl workspace name
  * @param {string} tagsString tags in string for this Toggl time entry
- * @return {string} calendarDesc Google Calendar description
+ * @return {string}
  */
-function gcalDesc(timeEntryId, workspaceName, tagsString) {
-  var calendarDesc = 'Time Entry ID: ' + timeEntryId + '\nWorkspace: ' + workspaceName + '\nTags: ' + tagsString;
-  return calendarDesc;
+function gcalDesc_(timeEntryId, workspaceName, tagsString) {
+  return `Time Entry ID: ${timeEntryId}\nWorkspace: ${workspaceName}\nTags: ${tagsString}`;
 }
 
 /**
- * Returns the maximum value in a designated column
+ * Returns the maximum value in a designated column.
  * @param {sheet} sheet Target spreadsheet sheet object
  * @param {number} numCol Column number of target column starting from 1
  * @param {number} initialValue Initial integer to compare with; defaults to 0
@@ -355,8 +327,7 @@ function getMax_(sheet, numCol, initialValue = 0) {
  * Retrieve contents of a designated spreadsheet in form of a JavaScript object.
  * Note that all sheets must have the first row as its header.
  * @param {Object} spreadsheet Spreadsheet object which can be retrieved by Google Apps Script methods like SpreadsheetApp.getActiveSpreadsheet()
- * @param {array} targetSheets [Optional] An array of sheet names from which to retrieve data and convert to object.
- * @returns {Object} Object in the following format: { sheetName: [{header1: value01, ..., headerN: value0N}, {header1: value11, ..., headerN: value1N}, ..., {header1: valueM1, ..., headerN: valueMN}] }
+ * @returns {Object}
  */
 function getSheetsInfo_(spreadsheet) {
   return spreadsheet.getSheets().reduce((obj, sheet) => {
@@ -401,20 +372,6 @@ function getSheetsInfo_(spreadsheet) {
   }, {});
 }
 
-
-/** List of script properties to set before executing script:
- * togglFolderId - ID of Google Drive folder to save Toggl spreadsheet in.
- * currentSpreadsheetId - Current spreadsheet ID to record Toggl time entries in.
- * prevSpreadsheetId - [Optional] Spreadsheet ID of the spreadsheet used before currentSpreadsheetId.
- * togglToken - Toggl API Token. See https://github.com/toggl/toggl_api_docs#api-token for details.
- * calendarIdPrivate - Google Calendar ID for the calendar you want to save your time entries in workspace 'Private'
- * calendarIdWork - Google Calendar ID for the calendar you want to save your time entries in workspace 'Work'
- * lastTimeEntryId - the last retrieved time entry ID recorded on script property; togglRecord() will retrieve time entries that are larger than this ID.
- * currentYear - Current year.
- * autoTagWorkspaceId - [Optional] Target workspace ID of function autoTag()
- * autoTag01, autoTag02, ..., autoTag[n] - [Optional] Tags to use in function autoTag()
- */
-
 /**
 // Global variables
 var sp = PropertiesService.getScriptProperties(); // File > Properties > Script Properties
@@ -424,25 +381,6 @@ var currentSpreadsheetId = scriptProperties.currentSpreadsheetId;
 var currentSpreadsheet = SpreadsheetApp.openById(currentSpreadsheetId);
 var prevSpreadsheetId = scriptProperties.prevSpreadsheetId;
 var prevSpreadsheet = SpreadsheetApp.openById(prevSpreadsheetId);
-
-var myEmail = Session.getActiveUser().getEmail();
-var userName = myEmail.substring(0, myEmail.indexOf('@')); // the *** in ***@myDomain.com
-
-// Declare TogglScript Properties
-// Toggl API Token. See https://github.com/toggl/toggl_api_docs#api-token for details.
-TogglScript.togglToken = scriptProperties.togglToken;
-// Sync time zone of TogglScript Library to the zone of current spreadsheet
-TogglScript.timeZone = timeZone;
-
-// Create object for workspace name and its corresponding Google Calendar ID
-var calendarIds = {};
-// Change key name to fit your Toggl workspace name
-// Google Calendar Id(s) must be set in the script properties beforehand.
-// e.g., calendarIds['myWorkspaceName1'] = scriptProperties.calendarId****;
-//       calendarIds['myWorkspaceName2'] = scriptProperties.calendarId****;
-calendarIds['Private'] = scriptProperties.calendarIdPrivate;
-calendarIds['Work'] = scriptProperties.calendarIdWork;
- */
 
 ////////////////
 // dailyCheck //
@@ -734,8 +672,8 @@ function updateTimeEntries(targetSpreadsheet) {
 
       // Updated components of Google Calendar event
       var updatedTargetCalendar = calendarIds[workspaceName]; // Target Google Calendar ID
-      var updatedCalendarTitle = gcalTitle(projectName, updatedDescription); // Calendar event title; see toggl.gs for gcalTitle()
-      var updatedCalendarDesc = gcalDesc(timeEntryId, workspaceName, tagString); // Calendar description; see toggl.gs for gcalDesc()
+      var updatedCalendarTitle = gcalTitle_(projectName, updatedDescription); // Calendar event title; see toggl.gs for gcalTitle_()
+      var updatedCalendarDesc = gcalDesc_(timeEntryId, workspaceName, tagString); // Calendar description; see toggl.gs for gcalDesc_()
 
       // Update calendar event (Delete old event and create a new one)
       CalendarApp.getCalendarById(oldTargetCalendar).getEventById(oldICalId).deleteEvent();
