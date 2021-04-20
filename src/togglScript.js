@@ -129,13 +129,15 @@ class TogglScript {
    * When startDateString and endDateString is specified, gets the time entries for the period between start and end dates.
    * If not, returns the time entries in the last 9 days. The limit of returned time entries is 1000.
    * https://github.com/toggl/toggl_api_docs/blob/master/chapters/time_entries.md#get-time-entries-started-in-a-specific-time-range
-   * @param {string} startDateString - ISO 8601 date and time strings; e.g., "2020-01-09T19:23:30+09:00"
-   * @param {string} endDateString - ISO 8601 date and time strings
-   * @return {Object} timeEntries
+   * @param {string} startDateString ISO 8601 date and time strings; e.g., "2020-01-09T19:23:30+09:00"
+   * @param {string} endDateString ISO 8601 date and time strings
+   * @return {Object} Time entries
    */
   getTimeEntries(startDateString = undefined, endDateString = undefined) {
-    let extUrl = '';
-    if (!startDateString || !endDateString) {
+    let extUrl;
+    if (!startDateString && !endDateString) {
+      extUrl = '';
+    } else if (!startDateString || !endDateString) {
       throw new Error('endDateString is missing');
     } else if (startDateString && endDateString) {
       extUrl = `?start_date=${encodeURIComponent(startDateString)}&end_date=${encodeURIComponent(endDateString)}`;
