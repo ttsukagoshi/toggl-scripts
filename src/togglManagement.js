@@ -41,6 +41,11 @@ function onOpen() {
     .addItem('Get Toggl Time Entries', 'togglRecord')
     .addSeparator()
     .addSubMenu(
+      ui.createMenu('Update')
+        .addItem('Manually execute AutoTag', 'autoTag')
+    )
+    .addSeparator()
+    .addSubMenu(
       ui.createMenu('Setup')
         .addItem('Check Saved Token', 'checkApiToken')
         .addItem('Save API Token', 'saveApiToken')
