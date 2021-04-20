@@ -21,7 +21,7 @@
 // SOFTWARE.
 
 /* global TogglScript */
-/* exported checkApiToken, deleteApiToken, onOpen, saveApiToken */
+/* exported autoTag, checkApiToken, deleteApiToken, onOpen, saveApiToken */
 
 // Name of spreadsheet worksheets
 const SHEET_NAME_CONFIG = '00_Config';
