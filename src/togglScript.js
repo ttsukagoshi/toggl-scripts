@@ -131,7 +131,8 @@ class TogglScript {
    * https://github.com/toggl/toggl_api_docs/blob/master/chapters/time_entries.md#get-time-entries-started-in-a-specific-time-range
    * @param {string} startDateString ISO 8601 date and time strings; e.g., "2020-01-09T19:23:30+09:00"
    * @param {string} endDateString ISO 8601 date and time strings
-   * @return {Object} Time entries
+   * @return {Object} Time entries;
+   * see https://github.com/toggl/toggl_api_docs/blob/master/chapters/time_entries.md for full details of the properties of a time entry.
    */
   getTimeEntries(startDateString = undefined, endDateString = undefined) {
     let extUrl;
