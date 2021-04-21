@@ -31,6 +31,7 @@ const SHEET_NAME_SPREADSHEET_LIST = '10_Record Spreadsheet List';
 // User property keys
 const UP_KEY_API_TOKEN = 'togglToken';
 const UP_KEY_LAST_TIME_ENTRY_ID = 'lastTimeEntryId';
+const UP_KEY_RECORDING_YEAR = 'recordingYear';
 
 /**
  * Spreadsheet menu
@@ -144,27 +145,27 @@ function togglRecord() {
   // Basic variables
   var myEmail = Session.getActiveUser().getEmail();
   var userName = myEmail.substring(0, myEmail.indexOf('@')); // the *** in ***@myDomain.com
-  var userProperties = PropertiesService.getUserProperties();
-  var togglScript = new TogglScript(userProperties.getProperty(UP_KEY_API_TOKEN));
-  var upLastTimeEntryId = userProperties.getProperty(UP_KEY_LAST_TIME_ENTRY_ID); // the last retrieved time entry ID recorded on user property
-  var now = new Date();
+  var userPropertiesObj = PropertiesService.getUserProperties().getProperties();
+  var togglScript = new TogglScript(userPropertiesObj.UP_KEY_API_TOKEN);
+  var upLastTimeEntryId = userPropertiesObj.UP_KEY_LAST_TIME_ENTRY_ID; // the last retrieved time entry ID recorded on user property
   // Get configuration values from the spreadsheet
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var timeZone = ss.getSpreadsheetTimeZone();
   var config = getSheetsInfo_(ss);
-  // Get the target spreadsheet and relevant sheet objects
-  var targetSpreadsheetUrl = config[SHEET_NAME_SPREADSHEET_LIST].reduce((latestRow, row) => {
-    if (!Object.keys(latestRow).length || row.YEAR >= latestRow.YEAR) {
-      latestRow = row;
-    }
-    return latestRow;
-  }, {}).URL;
+  // Get the target spreadsheet URL
+  var targetSpreadsheetObj = config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == userPropertiesObj.UP_KEY_RECORDING_YEAR)[0]; // returns 'undefined' if there are no existing spreadsheet in the list
+  if (!targetSpreadsheetObj) {
+    // If there are no existing spreadsheet in the spreadsheet list,
+    // create a new one by executing newFileCheck()
+    newFileCheck();
+    targetSpreadsheetObj = config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == userPropertiesObj.UP_KEY_RECORDING_YEAR)[0];
+  }
+  var targetSpreadsheetUrl = targetSpreadsheetObj.URL;
+  // Get the target spreadsheet object, based on its URL, and relevant sheet objects
   var targetSpreadsheet = SpreadsheetApp.openByUrl(targetSpreadsheetUrl);
   var recordSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].RECORD_SHEET_NAME);
-  var lastTimeEntryId = (upLastTimeEntryId ? upLastTimeEntryId : getMax_(recordSheet, 1, 1));
-  // Variables for logs
-  var logTime = togglScript.togglFormatDate(now, timeZone);
   var logSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME);
+  var lastTimeEntryId = (upLastTimeEntryId ? upLastTimeEntryId : getMax_(recordSheet, 1, 1));
   try {
     // Create objects for workspaces and projects with their IDs and names as keys and values, respectively.
     let workspaceObj = togglScript.getWorkspaces().reduce((obj, workspace) => {
@@ -225,7 +226,6 @@ function togglRecord() {
       }
       return entries;
     }, []);
-    console.log(newTimeEntries);
     // Throw error if no new time entry is available
     if (!newTimeEntries.length) {
       throw new Error('No new time entry available');
@@ -236,13 +236,14 @@ function togglRecord() {
     // Update UP_KEY_LAST_TIME_ENTRY_ID in user properties
     userProperties.setProperty(UP_KEY_LAST_TIME_ENTRY_ID, getMax_(recordSheet, 1, lastTimeEntryId));
     // Log
-    logSheet.appendRow([logTime, userName, `Recorded: ${newTimeEntries.length} Toggl time entries`]);
-  } catch (e) {
+    logSheet.appendRow([togglScript.togglFormatDate(new Date(), timeZone), userName, `Recorded: ${newTimeEntries.length} Toggl time entries`]);
+  } catch (error) {
+    let logTime = togglScript.togglFormatDate(new Date(), timeZone);
     // Log error
-    logSheet.appendRow([logTime, userName, e.stack]);
+    logSheet.appendRow([logTime, userName, error.stack]);
     // Email notification
     let mailSub = `[Error] Recording Toggl Time Entry ${logTime}`;
-    var mailBody = `${e.stack}\n\nToggl Management Spreadsheet: \n${ss.getUrl()}\n\nRecord Spreadsheet: \n${targetSpreadsheetUrl}`;
+    var mailBody = `${error.stack}\n\nToggl Management Spreadsheet: \n${ss.getUrl()}\n\nRecord Spreadsheet: \n${targetSpreadsheetUrl}`;
     MailApp.sendEmail(myEmail, mailSub, mailBody);
   }
 }
@@ -293,6 +294,76 @@ function autoTag() {
       userName,
       `Error: [autoTag] ${error.stack}`
     ]);
+  }
+}
+
+/**
+ * Check (daily) for the current date; 
+ * If current year is not equal with the script property 'recordingYear', a new spreadsheet will be created under a designated Google Drive folder.
+ * The spreadsheet ID of this new spreadsheet will replace script property 'currentSpreadsheetId'
+ */
+function newFileCheck() {
+  // Basic variables
+  var myEmail = Session.getActiveUser().getEmail();
+  var userName = myEmail.substring(0, myEmail.indexOf('@')); // the *** in ***@myDomain.com
+  var userProperties = PropertiesService.getUserProperties();
+  var togglScript = new TogglScript(userProperties.getProperty(UP_KEY_API_TOKEN));
+  // Get configuration values from the spreadsheet
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var timeZone = ss.getSpreadsheetTimeZone();
+  var config = getSheetsInfo_(ss);
+  try {
+    let currentYear = Utilities.formatDate(new Date(), timeZone, 'yyyy');
+    let recordingYear = userProperties.getProperty(UP_KEY_RECORDING_YEAR) || currentYear;
+    // Get the latest spreadsheet URL
+    let currentSpreadsheetObj = config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == currentYear)[0]; // returns 'undefined' if there are no existing spreadsheet in the list
+    if (currentYear > recordingYear || !currentSpreadsheetObj) {
+      if (currentSpreadsheetObj) {
+        // If current recording spreadsheet exists,
+        // execute autoTag and togglRecord on this existing spreadsheet before creating a new one
+        autoTag();
+        togglRecord();
+      }
+      // Create a new recording spreadsheet for the latest year
+      let placeholderValues = [
+        {
+          'replace': '{{year}}',
+          'value': currentYear
+        },
+        {
+          'replace': '{{userName}}',
+          'value': userName
+        }
+      ];
+      let newFileName = placeholderValues.reduce((replacedText, placeholder) => replacedText.replace(placeholder.replace, placeholder.value),
+        config[SHEET_NAME_CONFIG].RECORD_SPREADSHEET_NAME);
+      let targetFolder = DriveApp.getFolderById(config[SHEET_NAME_CONFIG].DRIVE_FOLDER_ID);
+      let templateFile = DriveApp.getFileById(config[SHEET_NAME_CONFIG].TEMPLATE_SPREADSHEET_ID)
+      let newFile = templateFile.makeCopy(newFileName, targetFolder);
+      let newFileUrl = newFile.getUrl();
+      // Add the new file to the list of spreadsheets
+      ss.getSheetByName(SHEET_NAME_SPREADSHEET_LIST)
+        .appendRow([currentYear, newFileName, newFileUrl]);
+      // Update user property
+      userProperties.setProperty(UP_KEY_RECORDING_YEAR, currentYear);
+      // Log result
+      SpreadsheetApp.openById(newFile.getId()).getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME)
+        .appendRow([togglScript.togglFormatDate(new Date(), timeZone), userName, '[newFileCheck] Created this spreadsheet.']);
+      // Email notification
+      let notification = `[newFileCheck] New spreadsheet for Toggl record created at\n${newFileUrl}\n\nToggl Management Spreadsheet:\n${ss.getUrl()}`;
+      MailApp.sendEmail(myEmail, '[Toggl] New Spreadsheet for Toggl Record Created', notification);
+    } else {
+      // Log result
+      SpreadsheetApp.openByUrl(currentSpreadsheetObj.URL)
+        .getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME)
+        .appendRow([togglScript.togglFormatDate(new Date(), timeZone), userName, '[newFileCheck] Checked: use current spreadsheet']);
+    }
+  } catch (error) {
+    console.error(error.stack);
+    // Email notification
+    let mailSub = `[Toggl] Error in New File Check ${logTime}`;
+    var mailBody = `${error.stack}\n\nToggl Management Spreadsheet: \n${ss.getUrl()}`;
+    MailApp.sendEmail(myEmail, mailSub, mailBody);
   }
 }
 
@@ -386,135 +457,6 @@ var currentSpreadsheetId = scriptProperties.currentSpreadsheetId;
 var currentSpreadsheet = SpreadsheetApp.openById(currentSpreadsheetId);
 var prevSpreadsheetId = scriptProperties.prevSpreadsheetId;
 var prevSpreadsheet = SpreadsheetApp.openById(prevSpreadsheetId);
-
-////////////////
-// dailyCheck //
-////////////////
-
-/**
- * Check (daily) for the current date; 
- * If current year is not equal with the script property 'currentYear', a new spreadsheet will be created under a designated Google Drive folder.
- * The spreadsheet ID of this new spreadsheet will replace script property 'currentSpreadsheetId'
- */
-function dailyCheck() {
-  var now = new Date();
-  var year = Utilities.formatDate(now, timeZone, 'yyyy');
-  var log = [];
-  var logTimestamp = TogglScript.togglFormatDate(now);
-  var logText = '';
-  try {
-    if (year !== scriptProperties.currentYear || currentSpreadsheetId == null) {
-      var togglFolder = DriveApp.getFolderById(togglFolderId);
-      var spreadsheetName = 'Toggl' + year + ' (' + userName + ')';
-
-      // Create spreadsheet in designated Google Drive folder; see below for details of createSpreadsheet() function.
-      var createdSpreadsheetId = createSpreadsheet(togglFolder, spreadsheetName);
-      var createdSpreadsheet = SpreadsheetApp.openById(createdSpreadsheetId);
-      var createdSpreadsheetUrl = createdSpreadsheet.getUrl();
-
-      // Format the created spreadsheet
-      // Set sheet name & create a new sheet
-      var recordSheet = createdSpreadsheet.getSheets()[0].setName('Toggl_Record');
-      var logSheet = createdSpreadsheet.insertSheet(1).setName('Log');
-      var sheets = [recordSheet, logSheet];
-      // Create a header row in the sheet
-      var header = [];
-      var headerItems = [];
-      // for recordSheet
-      headerItems[0] = ['TIME_ENTRY_ID',
-        'WORKSPACE_ID',
-        'WORKSPACE',
-        'PROJECT_ID',
-        'PROJECT',
-        'DESCRIPTION',
-        'TAGS',
-        'START',
-        'STOP',
-        'DURATION_SEC',
-        'USER_ID',
-        'GUID',
-        'BILLABLE',
-        'DURONLY',
-        'LAST_MODIFIED',
-        'iCalID',
-        'TIMESTAMP',
-        'CALENDAR_ID',
-        'updateFlag'
-      ];
-      // for logSheet
-      headerItems[1] = ['TIMESTAMP', 'USERNAME', 'LOG'];
-      // Define header style
-      var headerStyle = SpreadsheetApp.newTextStyle().setBold(true).build();
-
-      for (var i = 0; i < sheets.length; i++) {
-        var sheet = sheets[i];
-        header[0] = headerItems[i]; // header must be two-dimensional array
-        // Set header items and set text style
-        var headerRange = sheet.getRange(1, 1, 1, headerItems[i].length)
-          .setValues(header)
-          .setHorizontalAlignment('center')
-          .setTextStyle(headerStyle);
-        // Freeze the first row
-        sheet.setFrozenRows(1);
-        // Delete empty columns
-        sheet.deleteColumns(headerItems[i].length + 1, sheet.getMaxColumns() - headerItems[i].length);
-        // Set vertical alignment to 'top'
-        sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).setVerticalAlignment('top');
-      }
-
-      // Update script properties
-      var updatedProperties = {
-        'currentYear': year,
-        'currentSpreadsheetId': createdSpreadsheetId
-      };
-      if (currentSpreadsheetId !== null) {
-        updatedProperties['prevSpreadsheetId'] = currentSpreadsheetId;
-      }
-      sp.setProperties(updatedProperties, false);
-
-      // Log result
-      logText = 'Created spreadsheet';
-      log = [logTimestamp, userName, logText]; // one-dimensional array for appendRow()
-      logSheet.appendRow(log);
-
-      // Notification by email
-      var stop = new Date();
-      var executionTime = (stop - now) / 1000; // convert milliseconds to seconds
-      var notification = 'New spreadsheet for Toggl record created at ' + createdSpreadsheetUrl + '\nScript execution time: ' + executionTime + ' sec';
-      MailApp.sendEmail(myEmail, '[Toggl] New Spreadsheet for Toggl Record Created', notification);
-    } else {
-      // Log result
-      logText = 'Checked: use current spreadsheet';
-      log = [logTimestamp, userName, logText];
-      currentSpreadsheet.getSheetByName('Log').appendRow(log);
-    }
-  } catch (e) {
-    var thisScriptId = ScriptApp.getScriptId();
-    var url = 'https://script.google.com/d/' + thisScriptId + '/edit';
-    var body = TogglScript.errorMessage(e) + '\n\nCheck script at ' + url;
-    MailApp.sendEmail(myEmail, '[Toggl] Error in Daily Date Check', body)
-  }
-}
-
-//***********************
-// Background Function(s)
-//***********************
-
-/**
- * Function to create a Google Spreadsheet in a particular Google Drive folder
- * @param {Object} targetFolder - Google Drive folder object in which you want to place the spreadsheet
- * @param {string} ssName - name of spreadsheet 
- * @return {string} ssId - spreadsheet ID of created spreadsheet
- */
-function createSpreadsheet(targetFolder, ssName) {
-  var ssId = SpreadsheetApp.create(ssName).getId();
-  var temp = DriveApp.getFileById(ssId);
-  targetFolder.addFile(temp);
-  DriveApp.getRootFolder().removeFile(temp);
-  return ssId;
-}
-
-
 
 ////////////
 // Update //
