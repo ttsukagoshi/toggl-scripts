@@ -34,7 +34,6 @@ class TogglScript {
   constructor(togglToken) {
     this.BASIC_AUTH = `${togglToken}:api_token`;
   }
-
   ///////////////////
   // Basic Methods //
   ///////////////////
