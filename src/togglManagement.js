@@ -289,6 +289,11 @@ function autoTag() {
       `Updated: Time entry(ies) tagged by autoTag().\n${JSON.stringify(updatedTimeEntries)}`
     ]);
   } catch (error) {
+    // Trigger to retry
+    ScriptApp.newTrigger('autoTag')
+      .timeBased()
+      .after(5 * 60 * 1000) // in milliseconds
+      .create();
     logSheet.appendRow([
       togglScript.togglFormatDate(new Date(), timeZone),
       userName,
