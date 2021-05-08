@@ -152,9 +152,6 @@ function togglRecord() {
   var togglScript = new TogglScript(userPropertiesObj[UP_KEY_API_TOKEN]);
   // var upLastTimeEntryId = parseInt(userPropertiesObj[UP_KEY_LAST_TIME_ENTRY_ID]); // the last retrieved time entry ID recorded on user property
   var upLastTimeEntryId = userPropertiesObj[UP_KEY_LAST_TIME_ENTRY_ID]; // the last retrieved time entry ID recorded on user property
-  console.log(upLastTimeEntryId); /////
-  console.log(typeof upLastTimeEntryId); ////
-  console.log(upLastTimeEntryId > 2002618779); ////
   // Get configuration values from the spreadsheet
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var timeZone = ss.getSpreadsheetTimeZone();
@@ -173,7 +170,6 @@ function togglRecord() {
   var recordSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].RECORD_SHEET_NAME);
   var logSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME);
   var lastTimeEntryId = (upLastTimeEntryId ? upLastTimeEntryId : getMax_(recordSheet, 1, 1));
-  console.log(lastTimeEntryId); ///////
   try {
     // Create objects for workspaces and projects with their IDs and names as keys and values, respectively.
     let workspaceObj = togglScript.getWorkspaces().reduce((obj, workspace) => {
@@ -353,7 +349,7 @@ function newFileCheck() {
       let newFileName = placeholderValues.reduce((replacedText, placeholder) => replacedText.replace(placeholder.replace, placeholder.value),
         config[SHEET_NAME_CONFIG].RECORD_SPREADSHEET_NAME);
       let targetFolder = DriveApp.getFolderById(config[SHEET_NAME_CONFIG].DRIVE_FOLDER_ID);
-      let templateFile = DriveApp.getFileById(config[SHEET_NAME_CONFIG].TEMPLATE_SPREADSHEET_ID)
+      let templateFile = DriveApp.getFileById(config[SHEET_NAME_CONFIG].TEMPLATE_SPREADSHEET_ID);
       let newFile = templateFile.makeCopy(newFileName, targetFolder);
       let newFileUrl = newFile.getUrl();
       // Add the new file to the list of spreadsheets
@@ -376,7 +372,7 @@ function newFileCheck() {
   } catch (error) {
     console.error(error.stack);
     // Email notification
-    let mailSub = `[Toggl] Error in New File Check ${logTime}`;
+    let mailSub = `[Toggl] Error in New File Check ${togglScript.togglFormatDate(new Date(), timeZone)}`;
     var mailBody = `${error.stack}\n\nToggl Management Spreadsheet: \n${ss.getUrl()}`;
     MailApp.sendEmail(myEmail, mailSub, mailBody);
   }
