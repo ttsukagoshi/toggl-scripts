@@ -21,7 +21,7 @@
 // SOFTWARE.
 
 /* global TogglScript */
-/* exported autoTag, checkApiToken, deleteApiToken, onOpen, saveApiToken */
+/* exported checkApiToken, deleteApiToken, onOpen, saveApiToken, updateToggl */
 
 // Name of spreadsheet worksheets
 const SHEET_NAME_CONFIG = '00_Config';
@@ -44,10 +44,12 @@ function onOpen() {
     .addSubMenu(
       ui.createMenu('Update')
         .addItem('Manually execute AutoTag', 'autoTag')
+        .addItem('Update Toggl Time Entries', 'updateToggl')
     )
     .addSeparator()
     .addSubMenu(
       ui.createMenu('Setup')
+        .addItem('Create Initial Spreadsheet', 'newFileCheck')
         .addItem('Check Saved Token', 'checkApiToken')
         .addItem('Save API Token', 'saveApiToken')
         .addSeparator()
@@ -145,20 +147,25 @@ function togglRecord() {
   // Basic variables
   var myEmail = Session.getActiveUser().getEmail();
   var userName = myEmail.substring(0, myEmail.indexOf('@')); // the *** in ***@myDomain.com
-  var userPropertiesObj = PropertiesService.getUserProperties().getProperties();
-  var togglScript = new TogglScript(userPropertiesObj.UP_KEY_API_TOKEN);
-  var upLastTimeEntryId = userPropertiesObj.UP_KEY_LAST_TIME_ENTRY_ID; // the last retrieved time entry ID recorded on user property
+  var userProperties = PropertiesService.getUserProperties();
+  var userPropertiesObj = userProperties.getProperties();
+  var togglScript = new TogglScript(userPropertiesObj[UP_KEY_API_TOKEN]);
+  // var upLastTimeEntryId = parseInt(userPropertiesObj[UP_KEY_LAST_TIME_ENTRY_ID]); // the last retrieved time entry ID recorded on user property
+  var upLastTimeEntryId = userPropertiesObj[UP_KEY_LAST_TIME_ENTRY_ID]; // the last retrieved time entry ID recorded on user property
+  console.log(upLastTimeEntryId); /////
+  console.log(typeof upLastTimeEntryId); ////
+  console.log(upLastTimeEntryId > 2002618779); ////
   // Get configuration values from the spreadsheet
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var timeZone = ss.getSpreadsheetTimeZone();
   var config = getSheetsInfo_(ss);
   // Get the target spreadsheet URL
-  var targetSpreadsheetObj = config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == userPropertiesObj.UP_KEY_RECORDING_YEAR)[0]; // returns 'undefined' if there are no existing spreadsheet in the list
+  var targetSpreadsheetObj = config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == userPropertiesObj[UP_KEY_RECORDING_YEAR])[0]; // returns 'undefined' if there are no existing spreadsheet in the list
   if (!targetSpreadsheetObj) {
     // If there are no existing spreadsheet in the spreadsheet list,
     // create a new one by executing newFileCheck()
     newFileCheck();
-    targetSpreadsheetObj = config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == userPropertiesObj.UP_KEY_RECORDING_YEAR)[0];
+    targetSpreadsheetObj = config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == userPropertiesObj[UP_KEY_RECORDING_YEAR])[0];
   }
   var targetSpreadsheetUrl = targetSpreadsheetObj.URL;
   // Get the target spreadsheet object, based on its URL, and relevant sheet objects
@@ -166,6 +173,7 @@ function togglRecord() {
   var recordSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].RECORD_SHEET_NAME);
   var logSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME);
   var lastTimeEntryId = (upLastTimeEntryId ? upLastTimeEntryId : getMax_(recordSheet, 1, 1));
+  console.log(lastTimeEntryId); ///////
   try {
     // Create objects for workspaces and projects with their IDs and names as keys and values, respectively.
     let workspaceObj = togglScript.getWorkspaces().reduce((obj, workspace) => {
@@ -219,16 +227,16 @@ function togglRecord() {
           timeEntry.duronly,
           togglScript.togglFormatDate(new Date(timeEntry.at), timeZone), // Last modified in local time
           iCalId,
-          logTime,
+          togglScript.togglFormatDate(new Date(), timeZone),
           targetCalendarId,
-          '' // an empty field at the last for 'updateFlag'
+          '' // an empty field at the last for 'updateFlag' column
         ]);
       }
       return entries;
     }, []);
     // Throw error if no new time entry is available
     if (!newTimeEntries.length) {
-      throw new Error('No new time entry available');
+      throw new Error('[No New Entry] No new time entry available');
     }
     // Record in current spreadsheet
     recordSheet.getRange(recordSheet.getLastRow() + 1, 1, newTimeEntries.length, newTimeEntries[0].length)
@@ -242,9 +250,11 @@ function togglRecord() {
     // Log error
     logSheet.appendRow([logTime, userName, error.stack]);
     // Email notification
-    let mailSub = `[Error] Recording Toggl Time Entry ${logTime}`;
-    var mailBody = `${error.stack}\n\nToggl Management Spreadsheet: \n${ss.getUrl()}\n\nRecord Spreadsheet: \n${targetSpreadsheetUrl}`;
-    MailApp.sendEmail(myEmail, mailSub, mailBody);
+    if (!error.message.startsWith('[No New Entry]')) {
+      let mailSub = `[Error] Recording Toggl Time Entry ${logTime}`;
+      var mailBody = `${error.stack}\n\nToggl Management Spreadsheet: \n${ss.getUrl()}\n\nRecord Spreadsheet: \n${targetSpreadsheetUrl}`;
+      MailApp.sendEmail(myEmail, mailSub, mailBody);
+    }
   }
 }
 
@@ -373,6 +383,186 @@ function newFileCheck() {
 }
 
 /**
+ * Update Toggl and Google Calendar records for time entries
+ * whose value in the spreadsheet at field 'updateFlag' is 1.
+ * Numbers in updateFlag:
+ * - '0' means to delete the record;
+ * - if the ones digit is '1', the entry is subject to update;
+ * - the hundreds digit and higher refers to the number of updates made,
+ * on the assumption that there will be no more than 99 updates to a single time entry 
+ * e.g., if the value of 'updateFlag' is 201 for a time entry, this time entry has been updated twice,
+ * and is currently subject to a third update. 
+ */
+function updateToggl() {
+  // Basic variables
+  var myEmail = Session.getActiveUser().getEmail();
+  var userName = myEmail.substring(0, myEmail.indexOf('@')); // the *** in ***@myDomain.com
+  var userPropertiesObj = PropertiesService.getUserProperties().getProperties();
+  var togglScript = new TogglScript(userPropertiesObj.UP_KEY_API_TOKEN);
+  // Get configuration values from the spreadsheet
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var timeZone = ss.getSpreadsheetTimeZone();
+  var config = getSheetsInfo_(ss);
+  try {
+    // Stop currently running time entry and create log
+    let stoppedTimeEntry = togglScript.stopRunningTimeEntry();
+    SpreadsheetApp
+      .openByUrl(config[SHEET_NAME_SPREADSHEET_LIST].filter(row => row.YEAR == userPropertiesObj[UP_KEY_RECORDING_YEAR])[0].URL)
+      .getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME)
+      .appendRow([togglScript.togglFormatDate(new Date(), timeZone), userName, `Running Time Entry Stopped for Time Entry(ies) Update: \n${JSON.stringify(stoppedTimeEntry)}`]);
+    // Record all available time entries to spreadsheet & Google Calendar
+    togglRecord();
+    // Check all listed spreadsheets for the values under 'updateFlag' column
+    config[SHEET_NAME_SPREADSHEET_LIST].forEach(spreadsheetRow => {
+      // Get the target spreadsheet and its relevant sheets object
+      let targetSpreadsheet = SpreadsheetApp.openByUrl(spreadsheetRow.URL);
+      let recordSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].RECORD_SHEET_NAME);
+      let logSheet = targetSpreadsheet.getSheetByName(config[SHEET_NAME_CONFIG].LOG_SHEET_NAME);
+      ///////////////////////////////
+      // Array to store the time entry before and after update
+      var logOldNew = [];
+      // Array to store updated time entry IDs
+      var updatedIds = [];
+      // Starting column number of columns to modify after time entry is updated 
+      var updateRangeStartCol = 15;
+      var updates = [];
+      // Get the time entries in the spreadsheet
+      var records = recordSheet.getRange(2, 1, recordSheet.getLastRow() - 1, recordSheet.getLastColumn()).getValues();
+      // Update Toggl and Google Calendar records for time entries where the (ones digit) value for field 'updateFlag' is 1
+      for (var i = 0; i < records.length; i++) {
+        var record = records[i];
+        // Array to store the time entry before and after update
+        var logOldNewObj = {};
+        var logOldNewString = '';
+
+        // the last field in record = 'updateFlag'
+        var updateFlag = record[sheetLastCol - 1];
+        // the ones digit of updateFlag
+        var flagDet = parseInt(updateFlag) % 10;
+        // Skip records whose updateFlag is not 1
+        if (flagDet !== 1) {
+          continue;
+        }
+
+        // Content of time entry to update
+        var timeEntryId = record[0];
+        var workspaceId = record[1];
+        var workspaceName = record[2];
+        var projectId = record[3];
+        var projectName = record[4];
+        var description = record[5];
+        var tagString = record[6]; // comma-segmented string of tags
+        var start = record[7];
+        var stop = record[8];
+        var oldICalId = record[15];
+        var oldTargetCalendar = record[17];
+
+        // Formatting components of PUT or POST request on Toggl API
+        // Convert tagString to an array
+        var tagArray = tagString.split(',');
+        // Format start and stop
+        // Date objects of start and stop
+        var startM = new Date(start);
+        var stopM = new Date(stop);
+        var duration = (stopM - startM) / 1000; // Convert milliseconds into seconds
+        // For using PUT request on Toggl API
+        var startToggl = TogglScript.togglFormatDateUpdate(startM);
+        var stopToggl = TogglScript.togglFormatDateUpdate(stopM);;
+        // Time entry contents to update/create
+        var payload = {
+          'time_entry': {
+            'wid': workspaceId,
+            'pid': projectId,
+            'description': description,
+            'tags': tagArray,
+            'start': startToggl,
+            'stop': stopToggl,
+            'duration': duration,
+            'created_with': 'GoogleAppScript'
+          }
+        };
+        var payloadString = JSON.stringify(payload);
+
+        // Original time entry
+        var oldTimeEntry = TogglScript.getTimeEntry(timeEntryId);
+
+        var newTimeEntry = {};
+        // Update or create new time entry depending on whether there is a change in workspace or not
+        if (oldTimeEntry.data.wid == undefined || oldTimeEntry.data.wid == null) {
+          throw new Error('Workspace ID in oldTimeEntry not available; could not complete update.');
+        } else if (workspaceId == oldTimeEntry.data.wid) {
+          // Update time entry
+          newTimeEntry = TogglScript.updateTimeEntry(timeEntryId, payloadString);
+        } else {
+          // Create new time entry on new workspace and log result.
+          newTimeEntry = TogglScript.createTimeEntry(payloadString);
+          logText = 'Created: 1 Toggl time entry.\n' + JSON.stringify(newTimeEntry);
+          log = [timestampLocal, userName, logText];
+          logSheet.appendRow(log);
+          // Delete original time entry and log result.
+          TogglScript.deleteTimeEntry(timeEntryId);
+          logText = 'Deleted: 1 Toggl time entry.\n' + JSON.stringify(oldTimeEntry);
+          log = [timestampLocal, userName, logText];
+          logSheet.appendRow(log);
+          // Update script and spreadsheet for the time entry ID and lastTimeEntryId
+          timeEntryId = newTimeEntry.data.id;
+          recordSheet.getRange(i + 2, 1).setValue(timeEntryId);
+          sp.setProperty('lastTimeEntryId', getMaxTimeEntryId(targetSpreadsheet))
+        }
+
+        // Updated 'description' for the Toggl time entry
+        var updatedDescription = newTimeEntry.data.description;
+
+        // Updated 'lastModified' timestamp in Toggl
+        var updatedLastModified = new Date(newTimeEntry.data.at);
+
+        // Updated components of Google Calendar event
+        var updatedTargetCalendar = calendarIds[workspaceName]; // Target Google Calendar ID
+        var updatedCalendarTitle = gcalTitle_(projectName, updatedDescription); // Calendar event title; see toggl.gs for gcalTitle_()
+        var updatedCalendarDesc = gcalDesc_(timeEntryId, workspaceName, tagString); // Calendar description; see toggl.gs for gcalDesc_()
+
+        // Update calendar event (Delete old event and create a new one)
+        CalendarApp.getCalendarById(oldTargetCalendar).getEventById(oldICalId).deleteEvent();
+        var newEvent = CalendarApp.getCalendarById(updatedTargetCalendar).createEvent(updatedCalendarTitle, startM, stopM, { description: updatedCalendarDesc });
+        var updatedICalId = newEvent.getId();
+
+        // Update spreadsheet
+        var lastModifiedLocal = TogglScript.togglFormatDate(updatedLastModified);
+        updateFlag += 99;
+        updates[0] = [lastModifiedLocal, updatedICalId, timestampLocal, updatedTargetCalendar, updateFlag];
+        var updateRange = recordSheet
+          .getRange(i + 2, updateRangeStartCol, 1, sheetLastCol - updateRangeStartCol + 1)
+          .setValues(updates);
+
+        // Record old and new time entries for log
+        logOldNewObj['old'] = oldTimeEntry;
+        logOldNewObj['new'] = newTimeEntry;
+        logOldNewString = JSON.stringify(logOldNewObj);
+        logOldNew.push(logOldNewString);
+
+        updatedIds.push(timeEntryId);
+      }
+      if (updatedIds.length < 1) {
+        throw new Error('No updates');
+      }
+
+      // Log result
+      logText = 'Updated: ' + updatedIds.length + ' Toggl time entry(ies).\n' + logOldNew.join('\n');
+      log = [timestampLocal, userName, logText];
+      logSheet.appendRow(log);
+    });
+  } catch (error) {
+    logText = error.stack;
+    log = [timestampLocal, userName, logText];
+    logSheet.appendRow(log);
+  }
+}
+
+////////////////////////////
+// Background Function(s) //
+////////////////////////////
+
+/**
  * Standardized Google Calendar title format for this script.
  * @param {string} togglProjectName Toggl project name
  * @param {string} togglDesc Toggl description
@@ -467,24 +657,7 @@ var prevSpreadsheet = SpreadsheetApp.openById(prevSpreadsheetId);
 // Update //
 ////////////
 
-/**
- * Update Toggl and Google Calendar records for time entries where the value in spreadsheet for field 'updateFlag' is 1.
- */
-function updateToggl() {
-  var targetSpreadsheet = prevSpreadsheet; // Designate the spreadsheet object that you want to update
 
-  // Stop currently running time entry
-  var timestamp = TogglScript.togglFormatDate(new Date());
-  var stoppedTimeEntry = TogglScript.stopRunningTimeEntry();
-  var logText = 'Running Time Entry Stopped for Time Entry(ies) Update: \n' + JSON.stringify(stoppedTimeEntry);
-  var log = currentSpreadsheet.getSheetByName('Log').appendRow([timestamp, userName, logText]);
-
-  // Record all available time entries
-  togglRecord();
-
-  // Update the target time entries
-  updateTimeEntries(targetSpreadsheet);
-}
 
 /**
  * Gets the appropriate value of lastTimeEntryId in designated spreadsheet and records it in the log.
@@ -494,173 +667,6 @@ function getLastTimeEntryId() {
   var targetSpreadsheet = SpreadsheetApp.openById(ssId);
   var max = getMaxTimeEntryId(targetSpreadsheet);
   Logger.log('lastTimeEntryId should be ' + max);
-}
-
-
-//**************************
-// Background Function(s)
-//**************************
-/**
- * Update Toggl and Google Calendar records for time entries
- * where the value in target spreadsheet for field 'updateFlag' is 1.
- * Numbers in updateFlag:
- * {'0': delete,
- *  ones digit = '1': update,
- *  hundreds digit : number of updates made
- * } 
- *
- * @param {Spreadsheet} targetSpreadsheet Spreadsheet object to update time entries. Defaults to the current spreadsheet.
-*/
-function updateTimeEntries(targetSpreadsheet) {
-  targetSpreadsheet = targetSpreadsheet || currentSpreadsheet;
-  var now = new Date();
-  var timestampLocal = TogglScript.togglFormatDate(now);
-  // Log
-  var logSheet = targetSpreadsheet.getSheetByName('Log');
-  var logText = '';
-  var log = [];
-  // Array to store the time entry before and after update
-  var logOldNew = [];
-  // Array to store updated time entry IDs
-  var updatedIds = [];
-  // Starting column number of columns to modify after time entry is updated 
-  var updateRangeStartCol = 15;
-  var updates = [];
-
-  // Get the time entries in the spreadsheet
-  var recordSheet = targetSpreadsheet.getSheetByName('Toggl_Record');
-  var sheetLastCol = recordSheet.getLastColumn();
-  var recordRange = recordSheet.getRange(2, 1, recordSheet.getLastRow() - 1, sheetLastCol);
-  var records = recordRange.getValues();
-
-  try {
-    // Update Toggl and Google Calendar records for time entries where the (ones digit) value for field 'updateFlag' is 1
-    for (var i = 0; i < records.length; i++) {
-      var record = records[i];
-      // Array to store the time entry before and after update
-      var logOldNewObj = {};
-      var logOldNewString = '';
-
-      // the last field in record = 'updateFlag'
-      var updateFlag = record[sheetLastCol - 1];
-      // the ones digit of updateFlag
-      var flagDet = parseInt(updateFlag) % 10;
-      // Skip records whose updateFlag is not 1
-      if (flagDet !== 1) {
-        continue;
-      }
-
-      // Content of time entry to update
-      var timeEntryId = record[0];
-      var workspaceId = record[1];
-      var workspaceName = record[2];
-      var projectId = record[3];
-      var projectName = record[4];
-      var description = record[5];
-      var tagString = record[6]; // comma-segmented string of tags
-      var start = record[7];
-      var stop = record[8];
-      var oldICalId = record[15];
-      var oldTargetCalendar = record[17];
-
-      // Formatting components of PUT or POST request on Toggl API
-      // Convert tagString to an array
-      var tagArray = tagString.split(',');
-      // Format start and stop
-      // Date objects of start and stop
-      var startM = new Date(start);
-      var stopM = new Date(stop);
-      var duration = (stopM - startM) / 1000; // Convert milliseconds into seconds
-      // For using PUT request on Toggl API
-      var startToggl = TogglScript.togglFormatDateUpdate(startM);
-      var stopToggl = TogglScript.togglFormatDateUpdate(stopM);;
-      // Time entry contents to update/create
-      var payload = {
-        'time_entry': {
-          'wid': workspaceId,
-          'pid': projectId,
-          'description': description,
-          'tags': tagArray,
-          'start': startToggl,
-          'stop': stopToggl,
-          'duration': duration,
-          'created_with': 'GoogleAppScript'
-        }
-      };
-      var payloadString = JSON.stringify(payload);
-
-      // Original time entry
-      var oldTimeEntry = TogglScript.getTimeEntry(timeEntryId);
-
-      var newTimeEntry = {};
-      // Update or create new time entry depending on whether there is a change in workspace or not
-      if (oldTimeEntry.data.wid == undefined || oldTimeEntry.data.wid == null) {
-        throw new Error('Workspace ID in oldTimeEntry not available; could not complete update.');
-      } else if (workspaceId == oldTimeEntry.data.wid) {
-        // Update time entry
-        newTimeEntry = TogglScript.updateTimeEntry(timeEntryId, payloadString);
-      } else {
-        // Create new time entry on new workspace and log result.
-        newTimeEntry = TogglScript.createTimeEntry(payloadString);
-        logText = 'Created: 1 Toggl time entry.\n' + JSON.stringify(newTimeEntry);
-        log = [timestampLocal, userName, logText];
-        logSheet.appendRow(log);
-        // Delete original time entry and log result.
-        TogglScript.deleteTimeEntry(timeEntryId);
-        logText = 'Deleted: 1 Toggl time entry.\n' + JSON.stringify(oldTimeEntry);
-        log = [timestampLocal, userName, logText];
-        logSheet.appendRow(log);
-        // Update script and spreadsheet for the time entry ID and lastTimeEntryId
-        timeEntryId = newTimeEntry.data.id;
-        recordSheet.getRange(i + 2, 1).setValue(timeEntryId);
-        sp.setProperty('lastTimeEntryId', getMaxTimeEntryId(targetSpreadsheet))
-      }
-
-      // Updated 'description' for the Toggl time entry
-      var updatedDescription = newTimeEntry.data.description;
-
-      // Updated 'lastModified' timestamp in Toggl
-      var updatedLastModified = new Date(newTimeEntry.data.at);
-
-      // Updated components of Google Calendar event
-      var updatedTargetCalendar = calendarIds[workspaceName]; // Target Google Calendar ID
-      var updatedCalendarTitle = gcalTitle_(projectName, updatedDescription); // Calendar event title; see toggl.gs for gcalTitle_()
-      var updatedCalendarDesc = gcalDesc_(timeEntryId, workspaceName, tagString); // Calendar description; see toggl.gs for gcalDesc_()
-
-      // Update calendar event (Delete old event and create a new one)
-      CalendarApp.getCalendarById(oldTargetCalendar).getEventById(oldICalId).deleteEvent();
-      var newEvent = CalendarApp.getCalendarById(updatedTargetCalendar).createEvent(updatedCalendarTitle, startM, stopM, { description: updatedCalendarDesc });
-      var updatedICalId = newEvent.getId();
-
-      // Update spreadsheet
-      var lastModifiedLocal = TogglScript.togglFormatDate(updatedLastModified);
-      updateFlag += 99;
-      updates[0] = [lastModifiedLocal, updatedICalId, timestampLocal, updatedTargetCalendar, updateFlag];
-      var updateRange = recordSheet
-        .getRange(i + 2, updateRangeStartCol, 1, sheetLastCol - updateRangeStartCol + 1)
-        .setValues(updates);
-
-      // Record old and new time entries for log
-      logOldNewObj['old'] = oldTimeEntry;
-      logOldNewObj['new'] = newTimeEntry;
-      logOldNewString = JSON.stringify(logOldNewObj);
-      logOldNew.push(logOldNewString);
-
-      updatedIds.push(timeEntryId);
-    }
-    if (updatedIds.length < 1) {
-      throw new Error('No updates');
-    }
-
-    // Log result
-    logText = 'Updated: ' + updatedIds.length + ' Toggl time entry(ies).\n' + logOldNew.join('\n');
-    log = [timestampLocal, userName, logText];
-    logSheet.appendRow(log);
-  } catch (e) {
-    logText = TogglScript.errorMessage(e);
-    log = [timestampLocal, userName, logText];
-    logSheet.appendRow(log);
-  }
 }
 
 /**
