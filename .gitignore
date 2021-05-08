@@ -3,3 +3,6 @@
 
 # test files
 src/_debug.js
+
+# Windows files
+.DS_Store
