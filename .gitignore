@@ -1,6 +1,8 @@
 # Files for clasp
-appsscript.json
 .clasp.json
 
-# File for test runs on Google Apps Script editor
-src/test.js
+# test files
+src/_debug.js
+
+# Windows files
+.DS_Store
