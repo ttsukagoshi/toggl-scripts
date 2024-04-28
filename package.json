@@ -1,0 +1,48 @@
+{
+  "name": "toggl-scripts",
+  "version": "1.1.1",
+  "description": "Google Apps Script to record Toggl time entries to Google Sheets and create corresponding Google Calendar events",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "main": "src/index.ts",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ttsukagoshi/toggl-scripts.git"
+  },
+  "keywords": [
+    "google-sheets",
+    "google-calendar",
+    "google-apps-script",
+    "toggl",
+    "toggl-api",
+    "gas"
+  ],
+  "author": "ttsukagoshi",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ttsukagoshi/toggl-scripts/issues"
+  },
+  "homepage": "https://github.com/ttsukagoshi/toggl-scripts#readme",
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.78",
+    "@types/jest": "^29.5.11",
+    "@typescript-eslint/eslint-plugin": "^6.20.0",
+    "@typescript-eslint/parser": "^6.20.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-googleappsscript": "^1.0.5",
+    "eslint-plugin-prettier": "^5.1.3",
+    "jest": "^29.7.0",
+    "prettier": "^3.2.5",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  }
+}
