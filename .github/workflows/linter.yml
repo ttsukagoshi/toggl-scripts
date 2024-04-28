@@ -1,57 +1,48 @@
 ---
-###########################
-###########################
-## Linter GitHub Actions ##
-###########################
-###########################
 name: Lint Code Base
 
-#
-# Documentation:
-# https://help.github.com/en/articles/workflow-syntax-for-github-actions
-#
+on: # yamllint disable-line rule:truthy
+  push: null
+  pull_request: null
 
-#############################
-# Start the job on all push #
-#############################
-on:
-  push:
-    branches-ignore: [main]
-    # Remove the line above to run when pushing to main
-  pull_request:
-    branches: [main]
-
-###############
-# Set the Job #
-###############
 jobs:
   build:
-    # Name the Job
-    name: Lint Code Base
-    # Set the agent to run on
+    name: Lint
     runs-on: ubuntu-latest
 
-    ##################
-    # Load all steps #
-    ##################
-    steps:
-      ##########################
-      # Checkout the code base #
-      ##########################
-      - name: Checkout Code
-        uses: actions/checkout@v2
-        with:
-          # Full git history is needed to get a proper list of changed files within `super-linter`
-          fetch-depth: 0
+    permissions:
+      contents: read
+      packages: read
+      # To report GitHub Actions status checks
+      statuses: write
 
-      ################################
-      # Run Linter against code base #
-      ################################
-      - name: Lint Code Base
-        # uses: github/super-linter@v4
-        uses: docker://ghcr.io/github/super-linter:slim-v4 # See https://github.com/github/super-linter#images
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # super-linter needs the full git history to get the
+          # list of files that changed across commits
+          fetch-depth: 0
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Install dependencies
+        run: npm ci
+      - name: Super-linter
+        uses: super-linter/super-linter/slim@v6 # x-release-please-version
         env:
-          VALIDATE_ALL_CODEBASE: false
-          VALIDATE_JAVASCRIPT_ES: true
           DEFAULT_BRANCH: main
+          JAVASCRIPT_ES_CONFIG_FILE: .eslintrc.yml
+          LINTER_RULES_PATH: /
+          VALIDATE_ALL_CODEBASE: true
+          VALIDATE_JAVASCRIPT_STANDARD: false
+          # To report GitHub Actions status checks
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

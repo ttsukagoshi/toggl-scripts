@@ -1,8 +1,11 @@
-# Files for clasp
-.clasp.json
+# Node.js
+node_modules
 
-# test files
-src/_debug.js
+# clasp
+.clasp.json
 
 # Windows files
 .DS_Store
+
+# Jest
+coverage/
