@@ -24,7 +24,7 @@ jobs:
           # list of files that changed across commits
           fetch-depth: 0
       - name: Setup Node.js environment
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
       - name: Cache node modules
